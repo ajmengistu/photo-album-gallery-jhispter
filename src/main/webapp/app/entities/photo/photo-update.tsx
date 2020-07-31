@@ -27,6 +27,50 @@ export const PhotoUpdate = (props: IPhotoUpdateProps) => {
 
   const { description, image, imageContentType } = photoEntity;
 
+  const metadata = (
+    <div>
+      <AvGroup>
+        <Label id="heightLabel" for="height">
+          <Translate contentKey="galleryApp.photo.height">Height</Translate>
+        </Label>
+        <AvField id="photo-height" type="number" className="form-control" name="height" readOnly />
+      </AvGroup>
+      <AvGroup>
+        <Label id="widthLabel" for="width">
+          <Translate contentKey="galleryApp.photo.width">Width</Translate>
+        </Label>
+        <AvField id="photo-width" type="number" className="form-control" name="width" readOnly />
+      </AvGroup>
+      <AvGroup>
+        <Label id="takenLabel" for="taken">
+          <Translate contentKey="galleryApp.photo.taken">Taken</Translate>
+        </Label>
+        <AvInput
+          id="photo-taken"
+          type="datetime-local"
+          className="form-control"
+          name="taken"
+          readOnly
+          value={isNew ? null : convertDateTimeFromServer(this.props.photoEntity.taken)}
+        />
+      </AvGroup>
+      <AvGroup>
+        <Label id="uploadedLabel" for="uploaded">
+          <Translate contentKey="galleryApp.photo.uploaded">Uploaded</Translate>
+        </Label>
+        <AvInput
+          id="photo-uploaded"
+          type="datetime-local"
+          className="form-control"
+          name="uploaded"
+          readOnly
+          value={isNew ? null : convertDateTimeFromServer(this.props.photoEntity.uploaded)}
+        />
+      </AvGroup>
+    </div>
+  );
+  const metadataRows = isNew ? '' : metadata;
+
   const handleClose = () => {
     props.history.push('/photo');
   };
@@ -154,6 +198,7 @@ export const PhotoUpdate = (props: IPhotoUpdateProps) => {
                   />
                 </AvGroup>
               </AvGroup>
+              {metadataRows}
               <AvGroup>
                 <Label id="heightLabel" for="photo-height">
                   <Translate contentKey="galleryApp.photo.height">Height</Translate>

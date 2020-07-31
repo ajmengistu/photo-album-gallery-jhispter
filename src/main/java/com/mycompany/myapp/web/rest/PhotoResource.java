@@ -1,29 +1,51 @@
 package com.mycompany.myapp.web.rest;
 
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.time.Instant;
+import java.util.Date;
+import java.util.List;
+import java.util.Optional;
+
+import javax.validation.Valid;
+import javax.xml.bind.DatatypeConverter;
+
+import com.drew.imaging.ImageMetadataReader;
+import com.drew.imaging.ImageProcessingException;
+import com.drew.metadata.Metadata;
+import com.drew.metadata.MetadataException;
+import com.drew.metadata.exif.ExifSubIFDDirectory;
+import com.drew.metadata.jpeg.JpegDirectory;
 import com.mycompany.myapp.domain.Photo;
 import com.mycompany.myapp.repository.PhotoRepository;
 import com.mycompany.myapp.web.rest.errors.BadRequestAlertException;
 
-import io.github.jhipster.web.util.HeaderUtil;
-import io.github.jhipster.web.util.PaginationUtil;
-import io.github.jhipster.web.util.ResponseUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import javax.validation.Valid;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.List;
-import java.util.Optional;
+import io.github.jhipster.web.util.HeaderUtil;
+import io.github.jhipster.web.util.PaginationUtil;
+import io.github.jhipster.web.util.ResponseUtil;
 
 /**
  * REST controller for managing {@link com.mycompany.myapp.domain.Photo}.
@@ -50,28 +72,70 @@ public class PhotoResource {
      * {@code POST  /photos} : Create a new photo.
      *
      * @param photo the photo to create.
-     * @return the {@link ResponseEntity} with status {@code 201 (Created)} and with body the new photo, or with status {@code 400 (Bad Request)} if the photo has already an ID.
+     * @return the {@link ResponseEntity} with status {@code 201 (Created)} and with
+     *         body the new photo, or with status {@code 400 (Bad Request)} if the
+     *         photo has already an ID.
      * @throws URISyntaxException if the Location URI syntax is incorrect.
      */
     @PostMapping("/photos")
-    public ResponseEntity<Photo> createPhoto(@Valid @RequestBody Photo photo) throws URISyntaxException {
+    public ResponseEntity<Photo> createPhoto(@Valid @RequestBody Photo photo) throws Exception {
         log.debug("REST request to save Photo : {}", photo);
         if (photo.getId() != null) {
             throw new BadRequestAlertException("A new photo cannot already have an ID", ENTITY_NAME, "idexists");
         }
+
+        try {
+            photo = setMetadata(photo);
+        } catch (ImageProcessingException ipe) {
+            log.error(ipe.getMessage());
+        }
+
         Photo result = photoRepository.save(photo);
-        return ResponseEntity.created(new URI("/api/photos/" + result.getId()))
-            .headers(HeaderUtil.createEntityCreationAlert(applicationName, true, ENTITY_NAME, result.getId().toString()))
-            .body(result);
+        return ResponseEntity
+                .created(new URI("/api/photos/" + result.getId())).headers(HeaderUtil
+                        .createEntityCreationAlert(applicationName, true, ENTITY_NAME, result.getId().toString()))
+                .body(result);
+    }
+
+    private Photo setMetadata(Photo photo) throws ImageProcessingException, IOException, MetadataException {
+        String str = DatatypeConverter.printBase64Binary(photo.getImage());
+        byte[] data2 = DatatypeConverter.parseBase64Binary(str);
+        InputStream inputStream = new ByteArrayInputStream(data2);
+        BufferedInputStream bis = new BufferedInputStream(inputStream);
+        Metadata metadata = ImageMetadataReader.readMetadata(bis);
+        ExifSubIFDDirectory directory = metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class);
+
+        if (directory != null) {
+            Date date = directory.getDateDigitized();
+            if (date != null) {
+                photo.setTaken(date.toInstant());
+            }
+        }
+
+        if (photo.getTaken() == null) {
+            log.debug("Photo EXIF date digitized not available, setting taken on date to now...");
+            photo.setTaken(Instant.now());
+        }
+
+        photo.setUploaded(Instant.now());
+
+        JpegDirectory jpgDirectory = metadata.getFirstDirectoryOfType(JpegDirectory.class);
+        if (jpgDirectory != null) {
+            photo.setHeight(jpgDirectory.getImageHeight());
+            photo.setWidth(jpgDirectory.getImageWidth());
+        }
+
+        return photo;
     }
 
     /**
      * {@code PUT  /photos} : Updates an existing photo.
      *
      * @param photo the photo to update.
-     * @return the {@link ResponseEntity} with status {@code 200 (OK)} and with body the updated photo,
-     * or with status {@code 400 (Bad Request)} if the photo is not valid,
-     * or with status {@code 500 (Internal Server Error)} if the photo couldn't be updated.
+     * @return the {@link ResponseEntity} with status {@code 200 (OK)} and with body
+     *         the updated photo, or with status {@code 400 (Bad Request)} if the
+     *         photo is not valid, or with status
+     *         {@code 500 (Internal Server Error)} if the photo couldn't be updated.
      * @throws URISyntaxException if the Location URI syntax is incorrect.
      */
     @PutMapping("/photos")
@@ -81,20 +145,23 @@ public class PhotoResource {
             throw new BadRequestAlertException("Invalid id", ENTITY_NAME, "idnull");
         }
         Photo result = photoRepository.save(photo);
-        return ResponseEntity.ok()
-            .headers(HeaderUtil.createEntityUpdateAlert(applicationName, true, ENTITY_NAME, photo.getId().toString()))
-            .body(result);
+        return ResponseEntity.ok().headers(
+                HeaderUtil.createEntityUpdateAlert(applicationName, true, ENTITY_NAME, photo.getId().toString()))
+                .body(result);
     }
 
     /**
      * {@code GET  /photos} : get all the photos.
      *
-     * @param pageable the pagination information.
-     * @param eagerload flag to eager load entities from relationships (This is applicable for many-to-many).
-     * @return the {@link ResponseEntity} with status {@code 200 (OK)} and the list of photos in body.
+     * @param pageable  the pagination information.
+     * @param eagerload flag to eager load entities from relationships (This is
+     *                  applicable for many-to-many).
+     * @return the {@link ResponseEntity} with status {@code 200 (OK)} and the list
+     *         of photos in body.
      */
     @GetMapping("/photos")
-    public ResponseEntity<List<Photo>> getAllPhotos(Pageable pageable, @RequestParam(required = false, defaultValue = "false") boolean eagerload) {
+    public ResponseEntity<List<Photo>> getAllPhotos(Pageable pageable,
+            @RequestParam(required = false, defaultValue = "false") boolean eagerload) {
         log.debug("REST request to get a page of Photos");
         Page<Photo> page;
         if (eagerload) {
@@ -102,7 +169,8 @@ public class PhotoResource {
         } else {
             page = photoRepository.findAll(pageable);
         }
-        HttpHeaders headers = PaginationUtil.generatePaginationHttpHeaders(ServletUriComponentsBuilder.fromCurrentRequest(), page);
+        HttpHeaders headers = PaginationUtil
+                .generatePaginationHttpHeaders(ServletUriComponentsBuilder.fromCurrentRequest(), page);
         return ResponseEntity.ok().headers(headers).body(page.getContent());
     }
 
@@ -110,7 +178,8 @@ public class PhotoResource {
      * {@code GET  /photos/:id} : get the "id" photo.
      *
      * @param id the id of the photo to retrieve.
-     * @return the {@link ResponseEntity} with status {@code 200 (OK)} and with body the photo, or with status {@code 404 (Not Found)}.
+     * @return the {@link ResponseEntity} with status {@code 200 (OK)} and with body
+     *         the photo, or with status {@code 404 (Not Found)}.
      */
     @GetMapping("/photos/{id}")
     public ResponseEntity<Photo> getPhoto(@PathVariable Long id) {
@@ -129,6 +198,8 @@ public class PhotoResource {
     public ResponseEntity<Void> deletePhoto(@PathVariable Long id) {
         log.debug("REST request to delete Photo : {}", id);
         photoRepository.deleteById(id);
-        return ResponseEntity.noContent().headers(HeaderUtil.createEntityDeletionAlert(applicationName, true, ENTITY_NAME, id.toString())).build();
+        return ResponseEntity.noContent()
+                .headers(HeaderUtil.createEntityDeletionAlert(applicationName, true, ENTITY_NAME, id.toString()))
+                .build();
     }
 }
